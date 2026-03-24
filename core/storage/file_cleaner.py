@@ -1,9 +1,9 @@
 """文件清理工具，负责临时文件与空目录回收。"""
 import os
 import shutil
-from typing import List, Optional
+from typing import List
 
-from .logger import logger
+from ..logger import logger
 
 
 def cleanup_file(file_path: str) -> bool:
@@ -78,4 +78,3 @@ def cleanup_directory(dir_path: str, ignore_errors: bool = True) -> bool:
             return False
         else:
             raise
-

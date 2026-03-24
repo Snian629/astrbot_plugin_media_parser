@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 import aiohttp
 
 from ...logger import logger
-from ...file_cleaner import cleanup_file
+from ...storage import cleanup_file, stamp_subdir
 from .base import download_media_from_url
 
 
@@ -153,6 +153,7 @@ async def download_dash_to_cache(
 
     cache_subdir = os.path.normpath(os.path.join(cache_dir, media_id))
     os.makedirs(cache_subdir, exist_ok=True)
+    stamp_subdir(cache_subdir)
     video_temp_path = os.path.normpath(
         os.path.join(cache_subdir, f"video_{index}_video.m4s")
     )

@@ -5,20 +5,13 @@ from astrbot.api.event import AstrMessageEvent
 from astrbot.api.message_components import Nodes, Plain, Image, Node
 
 from .node_builder import is_pure_image_gallery
-from ..file_cleaner import cleanup_files
+from ..storage import cleanup_files
 from ..logger import logger
 
 
 class MessageSender:
 
     """消息发送器，封装统一的私聊/群聊发送接口。"""
-    def __init__(self):
-        """初始化消息发送器
-
-        Args:
-            无
-        """
-        pass
 
     def get_sender_info(self, event: AstrMessageEvent) -> tuple:
         """获取发送者信息

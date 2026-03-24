@@ -6,7 +6,7 @@ from ..logger import logger
 
 from astrbot.api.message_components import Plain, Image, Video, Node, Nodes
 
-from ..file_cleaner import cleanup_file
+from ..storage import cleanup_file
 from ..downloader.utils import strip_media_prefixes
 
 
@@ -186,11 +186,14 @@ def build_media_nodes(
     image_urls = metadata.get('image_urls', [])
     file_paths = metadata.get('file_paths', [])
     video_sizes = metadata.get('video_sizes', [])
+    use_fts = metadata.get('use_file_token_service', False)
+    file_token_urls = metadata.get('file_token_urls', [])
     
     logger.debug(
         f"构建媒体节点: {url}, "
         f"视频: {len(video_urls)}, 图片: {len(image_urls)}, "
-        f"文件路径: {len(file_paths)}, 使用本地文件: {use_local_files}"
+        f"文件路径: {len(file_paths)}, 使用本地文件: {use_local_files}, "
+        f"文件Token服务: {use_fts}"
     )
     
     if not video_urls and not image_urls and not file_paths:
@@ -213,18 +216,32 @@ def build_media_nodes(
             file_idx += 1
             continue
         
-        video_file_path = None
-        if use_local_files and file_idx < len(file_paths):
-            video_file_path = file_paths[file_idx]
-        
-        if use_local_files and video_file_path and os.path.exists(video_file_path):
+        token_url = (
+            file_token_urls[file_idx]
+            if use_fts and file_idx < len(file_token_urls)
+            else None
+        )
+        if token_url:
             try:
-                nodes.append(Video.fromFileSystem(video_file_path))
+                nodes.append(Video.fromURL(token_url))
+                file_idx += 1
+                continue
             except Exception as e:
-                logger.warning(f"构建视频节点失败: {video_file_path}, 错误: {e}")
+                logger.warning(f"使用Token URL构建视频节点失败: {token_url}, 错误: {e}")
+        
+        if use_fts:
+            actual_video_url = strip_media_prefixes(video_url)
+            try:
+                nodes.append(Video.fromURL(actual_video_url))
+            except Exception as e:
+                logger.warning(f"构建视频节点失败(直链回退): {actual_video_url}, 错误: {e}")
+        elif use_local_files and file_idx < len(file_paths) and file_paths[file_idx] and os.path.exists(file_paths[file_idx]):
+            try:
+                nodes.append(Video.fromFileSystem(file_paths[file_idx]))
+            except Exception as e:
+                logger.warning(f"构建视频节点失败: {file_paths[file_idx]}, 错误: {e}")
         else:
             actual_video_url = strip_media_prefixes(video_url)
-            
             try:
                 nodes.append(Video.fromURL(actual_video_url))
             except Exception as e:
@@ -242,16 +259,30 @@ def build_media_nodes(
             file_idx += 1
             continue
         
-        image_file_path = None
-        if use_local_files and file_idx < len(file_paths):
-            image_file_path = file_paths[file_idx]
-        
-        if use_local_files and image_file_path:
+        token_url = (
+            file_token_urls[file_idx]
+            if use_fts and file_idx < len(file_token_urls)
+            else None
+        )
+        if token_url:
             try:
-                nodes.append(Image.fromFileSystem(image_file_path))
+                nodes.append(Image.fromURL(token_url))
+                file_idx += 1
+                continue
             except Exception as e:
-                logger.warning(f"构建图片节点失败: {image_file_path}, 错误: {e}")
-                cleanup_file(image_file_path)
+                logger.warning(f"使用Token URL构建图片节点失败: {token_url}, 错误: {e}")
+        
+        if use_fts:
+            try:
+                nodes.append(Image.fromURL(image_url))
+            except Exception as e:
+                logger.warning(f"构建图片节点失败(直链回退): {image_url}, 错误: {e}")
+        elif use_local_files and file_idx < len(file_paths) and file_paths[file_idx]:
+            try:
+                nodes.append(Image.fromFileSystem(file_paths[file_idx]))
+            except Exception as e:
+                logger.warning(f"构建图片节点失败: {file_paths[file_idx]}, 错误: {e}")
+                cleanup_file(file_paths[file_idx])
         else:
             try:
                 nodes.append(Image.fromURL(image_url))

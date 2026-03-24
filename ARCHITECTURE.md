@@ -17,7 +17,10 @@ astrbot_plugin_media_parser/
 │   ├── logger.py                    # 统一日志打印器
 │   ├── types.py                     # 类型定义
 │   ├── constants.py                 # 常量定义
-│   ├── file_cleaner.py              # 文件清理工具
+│   ├── storage/                     # 存储与缓存管理模块
+│   │   ├── __init__.py              # 导出 cleanup_file/cleanup_files/cleanup_directory/CacheRegistry/stamp_subdir
+│   │   ├── file_cleaner.py          # 文件清理工具
+│   │   └── cache_registry.py        # 缓存目录注册表（跨配置追踪 + 安全清理）
 │   ├── parser/                      # 解析器模块
 │   │   ├── manager.py               # 解析器管理器
 │   │   ├── router.py                # 链接路由分发器
@@ -69,8 +72,9 @@ astrbot_plugin_media_parser/
 #### 1.3.2 核心支撑组件
 - **ConfigManager** (config_manager.py): 配置管理器
   - 解析配置文件，管理解析器启用状态与下载配置
-  - 管理触发设置与黑白名单权限
+  - 管理触发设置（自动解析 / 关键词触发 / 回复触发）与黑白名单权限
   - 处理各项代理配置并在运行时下发
+  - 提供类型安全的解析辅助方法（`_parse_positive_int`、`_parse_non_negative_float` 等）
 - **Logger** (logger.py): 日志记录器
   - 导出全局统一的 `logger` 对象，方便各模块导入使用
 - **Types** (types.py): 类型模块
@@ -155,11 +159,17 @@ astrbot_plugin_media_parser/
   - 当B站Cookie不可用时，后台触发管理员确认 → 发送登录链接/二维码 → 轮询登录状态
   - 管理员发送可解析链接时不拦截消息（仅拦截纯文本回复）
 
-#### 1.3.7 工具模块
-- **FileCleaner**: 文件清理工具
+#### 1.3.7 存储与工具模块 (storage/)
+- **FileCleaner** (storage/file_cleaner.py): 文件清理工具
   - 清理临时文件
   - 清理缓存目录
   - 删除文件后自动移除空父目录
+
+- **CacheRegistry** (storage/cache_registry.py): 缓存目录注册表
+  - 持久化记录本插件使用过的所有缓存路径（JSON 文件）
+  - 在媒体子目录中放置标记文件（`.astrbot_media_parser`）标识归属
+  - 安全清理：仅删除带标记的子目录，不触碰无标记内容或根目录
+  - 管理员主动清理 / 插件终止时自动清理
 
 - **Constants**: 常量定义
   - 超时时间
@@ -180,11 +190,14 @@ astrbot_plugin_media_parser/
   - 关闭所有活动的aiohttp会话
   - 取消所有正在进行的下载任务
   - 在插件terminate时调用
-- **FileCleaner**: 文件清理工具
+- **storage 模块**: 文件与缓存清理
   - 清理临时文件（图片）
   - 清理视频文件（含 DASH 临时 .m4s 文件）
-  - 删除文件后自动移除空父目录
-  - 清理缓存目录
+  - 删除文件后自动移除空的缓存子目录
+  - CacheRegistry 追踪所有缓存根目录，安全清理带标记的子目录
+- **文件Token服务模式**: 延迟清理
+  - 当 `use_file_token_service` 启用时，文件在发送后延迟 `file_token_ttl` 秒清理
+  - 确保消息平台有足够时间通过回调 URL 拉取文件
 
 ## 二、程序执行链
 
@@ -197,7 +210,10 @@ astrbot_plugin_media_parser/
   ↓
 权限检查 → 消息文本提取 → 提取可解析链接
   ├─ 有链接 → 跳过交互处理器，进入解析流程
-  └─ 无链接 → 检查管理员交互（handle_admin_reply） → 返回
+  └─ 无链接
+      ├─ 回复触发模式 → 检查回复消息中的链接（enable_reply_trigger）
+      │   └─ 提取到链接 → 进入解析流程
+      └─ 无链接 → 检查管理员交互（handle_admin_reply） → 返回
   ↓
 判断是否需要解析 (ConfigManager)
   ├─ 自动解析模式 → 直接解析
@@ -234,7 +250,9 @@ astrbot_plugin_media_parser/
   │   └─ 大媒体 → 单独发送
   └─ 非打包模式 → 逐个独立发送
   ↓
-清理临时文件 (FileCleaner)
+清理临时文件 (storage)
+  ├─ 文件Token服务模式 → 延迟清理（等待 file_token_ttl 秒）
+  └─ 普通模式 → 立即清理
 ```
 
 ### 2.2 详细程序链
@@ -257,7 +275,14 @@ admin_cookie_assist.try_update_admin_origin(event)
   ↓
 提取可解析链接 (extract_all_links)
   ├─ 有链接 → 进入 _should_parse 检查
-  └─ 无链接 → handle_admin_reply（管理员交互） → 返回
+  └─ 无链接
+      ├─ enable_reply_trigger 且回复文本含触发关键词
+      │   └─ _try_extract_reply_links()
+      │       ├─ 从 Reply.message_str 提取链接
+      │       └─ 从 Reply.chain 提取卡片 URL
+      │       ├─ 提取到链接 → 进入 _should_parse 检查
+      │       └─ 未提取到 → handle_admin_reply → 返回
+      └─ 否则 → handle_admin_reply（管理员交互） → 返回
   ↓
 main.py::VideoParserPlugin._should_parse()
   ├─ is_auto_parse = True → 返回 True
@@ -440,10 +465,17 @@ main.py::VideoParserPlugin.auto_parse()
   ↓
 finally 块
   ↓
-file_cleaner::cleanup_files()
-  ├─ 清理临时文件（图片）
-  ├─ 清理视频文件
-  └─ 自动移除空的缓存子目录（_try_remove_empty_parent）
+判断清理模式
+  ├─ 文件Token服务模式 (use_file_token_service)
+  │   └─ asyncio.create_task(_delayed_cleanup(files, file_token_ttl))
+  │       ├─ 等待 file_token_ttl 秒
+  │       ├─ storage::cleanup_files()
+  │       └─ CacheRegistry.cleanup_marked_in() 清理带标记子目录
+  └─ 普通模式
+      └─ storage::cleanup_files()
+          ├─ 清理临时文件（图片）
+          ├─ 清理视频文件
+          └─ 自动移除空的缓存子目录（_try_remove_empty_parent）
   ↓
 清理完成
 
@@ -453,6 +485,7 @@ file_cleaner::cleanup_files()
 - 非打包模式下，每个链接发送后立即清理其视频文件
 - 所有临时文件（图片）在finally块中统一清理
 - DASH下载的临时.m4s文件在合并后由dash handler内部清理
+- 文件Token服务模式下，所有文件延迟 file_token_ttl 秒后再清理
 ```
 
 #### 2.2.8 插件终止阶段
@@ -465,12 +498,11 @@ interaction::BilibiliAdminCookieAssistManager.shutdown()
   ↓
 downloader::manager::DownloadManager.shutdown()
   ├─ 设置 _shutting_down 标志
-  ├─ 关闭所有活动的 aiohttp 会话
   ├─ 取消所有正在进行的下载任务
   └─ 清理任务列表
   ↓
-file_cleaner::cleanup_directory()
-  └─ 清理缓存目录
+CacheRegistry.cleanup_marked_in(cache_dir)
+  └─ 清理缓存目录中带标记的子目录
   ↓
 终止完成
 ```
@@ -601,12 +633,17 @@ file_cleaner::cleanup_directory()
   ├─ 本地文件 → fromFileSystem()
   └─ 直链 → fromURL()（strip_media_prefixes 剥离所有前缀）
   ↓
+文件Token服务注册（若启用 use_file_token_service）
+  └─ 遍历 file_paths，注册到 file_token_service → 获取回调 URL
+  ↓
 消息发送
   ├─ 打包模式：普通媒体发送后清理视频文件
   ├─ 非打包模式：每个链接发送后清理视频文件
   └─ 所有临时文件在finally块中统一清理
   ↓
-文件清理 → 删除临时文件和视频文件 → 自动移除空父目录
+文件清理
+  ├─ 文件Token服务模式 → 延迟 file_token_ttl 秒后删除 + CacheRegistry 清理带标记子目录
+  └─ 普通模式 → 立即删除临时文件和视频文件 → 自动移除空父目录
 ```
 
 ### 4.3 代理流转

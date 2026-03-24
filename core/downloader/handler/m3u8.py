@@ -4,7 +4,6 @@ import os
 import re
 import shutil
 import tempfile
-import time
 from typing import Dict, Any, List, Optional, Tuple
 from urllib.parse import urljoin
 
@@ -12,7 +11,7 @@ import aiohttp
 
 from ...logger import logger
 
-from ...file_cleaner import cleanup_directory
+from ...storage import cleanup_directory, stamp_subdir
 from ...constants import Config
 
 
@@ -369,6 +368,7 @@ class M3U8Handler:
         try:
             cache_subdir = os.path.join(cache_dir, media_id)
             os.makedirs(cache_subdir, exist_ok=True)
+            stamp_subdir(cache_subdir)
             filename = f"video_{index}.mp4"
             output_path = os.path.join(cache_subdir, filename)
 

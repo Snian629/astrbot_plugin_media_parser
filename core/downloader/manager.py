@@ -13,7 +13,7 @@ from ..logger import logger
 from .utils import check_cache_dir_available, process_gather_results, strip_media_prefixes
 from .validator import get_video_size, validate_media_url
 from .router import download_media
-from ..file_cleaner import cleanup_files
+from ..storage import cleanup_files
 from ..constants import Config
 
 
@@ -39,13 +39,7 @@ class DownloadManager:
             max_concurrent_downloads: 最大并发下载数
         """
         self.max_video_size_mb = max_video_size_mb
-        if large_video_threshold_mb > 0:
-            self.large_video_threshold_mb = min(
-                large_video_threshold_mb,
-                Config.MAX_LARGE_VIDEO_THRESHOLD_MB
-            )
-        else:
-            self.large_video_threshold_mb = 0.0
+        self.large_video_threshold_mb = large_video_threshold_mb
         self.cache_dir = cache_dir
         self.max_concurrent_downloads = (
             max_concurrent_downloads 

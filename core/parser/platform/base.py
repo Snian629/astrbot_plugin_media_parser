@@ -1,6 +1,6 @@
 """平台解析器抽象基类，定义统一接口与结果规范。"""
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any, List
+from typing import Optional, List
 
 import aiohttp
 

@@ -8,7 +8,7 @@ from ..logger import logger
 
 from .platform.base import BaseVideoParser
 from .router import LinkRouter
-from .utils import SkipParse, is_live_url
+from .utils import SkipParse
 
 
 class ParserManager:

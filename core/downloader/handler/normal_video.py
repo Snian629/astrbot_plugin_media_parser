@@ -1,7 +1,7 @@
 """普通视频直链下载处理器。"""
 import asyncio
 import os
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 
 import aiohttp
 

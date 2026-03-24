@@ -7,7 +7,7 @@ import aiohttp
 
 from ...logger import logger
 
-from ...file_cleaner import cleanup_file
+from ...storage import cleanup_file
 from ..utils import extract_size_from_headers
 from ..validator import validate_media_response
 from ...constants import Config
