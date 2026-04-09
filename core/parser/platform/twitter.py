@@ -87,14 +87,7 @@ class TwitterParser(BaseVideoParser):
             tweet_id = match.group(1)
             if tweet_id not in seen_ids:
                 seen_ids.add(tweet_id)
-                original_url = match.group(0)
-                standardized_url = re.sub(
-                    r'https?://(?:twitter\.com|x\.com)',
-                    'https://x.com',
-                    original_url,
-                    flags=re.IGNORECASE
-                )
-                result_links_set.add(standardized_url)
+                result_links_set.add(match.group(0))
         result = list(result_links_set)
         if result:
             logger.debug(f"[{self.name}] extract_links: 提取到 {len(result)} 个链接: {result[:3]}{'...' if len(result) > 3 else ''}")
